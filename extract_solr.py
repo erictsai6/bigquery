@@ -2,6 +2,8 @@ import calendar
 import datetime
 import urllib, urllib2
 import time
+import os
+import dateutil.parse
 
 import simplejson as json
 
@@ -60,13 +62,33 @@ class ExtractSolr(object):
 
     def parse_json(self, json_file):
         raw_msgs = json_file['response']['docs']
+        data_directory = "data_files/"
         for raw_msg in raw_msgs:
-            encoded_ts = self._encoded_timestamp(raw_msg['time'])
+            ts_dt = dateutil.parser.parse(raw_msg['time'])
+            ts = int(time.mktime(ts_dt.timetuple()))
+            encoded_ts = self._encoded_timestamp(ts)
             filename = "{0}_{1}_{2}_{3}_{4}.csv".format(raw_msg['tenant_id'],
                                 raw_msg['host_name'], raw_msg['host_id'],
-                                raw_msg['log_id'], raw_msg['time'])
+                                raw_msg['log_id'], encoded_ts)
+            file_path = data_directory + encoded_ts + "/" filename
 
-            pass
+            # Checks if the directory exists, if not then create it..
+            if not os.path.exists(data_directory + encoded_ts):
+                os.makedirs(data_directory + encoded_ts)
+           
+            # Checks if the file exists
+            if not os.path.isfile(file_path):
+                ff = open(file_path, "w")
+                ff.write('time, msg_num, severity, message, dyn_headers')
+            else:
+                ff = open(file_path, "a")
+            
+            row_line = "{0}, {1}, {2}, \"{3}\", \"{4}\"".format(
+                        raw_msg.time, raw_msg.msg_num, raw_msg.severity, 
+                        raw_msg.message.replace("\"", "\"\""), "")
+            ff.write(row_line)
+
+            ff.close()
    
     def _encoded_timestamp(self, timestamp):
         
