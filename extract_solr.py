@@ -93,11 +93,27 @@ class ExtractSolr(object):
             ts_dt = dateutil.parser.parse(raw_msg['time'])
             ts = int(time.mktime(ts_dt.timetuple()))
             encoded_ts = self._encoded_timestamp(ts_dt)
-            filename = "{0}_{1}_{2}_{3}_{4}.csv".format(raw_msg['tenant_id'],
+            try:
+                if 'log_name' in raw_msg:
+                    filename = "{0}_{1}_{2}_{3}_{4}_{5}.csv".format(raw_msg['tenant_id'],
+                                raw_msg['host_name'], raw_msg['host_id'],
+                                raw_msg['log_name'].replace("/", ":"), raw_msg['log_id'], encoded_ts)
+                else:
+                    filename = "{0}_{1}_{2}_{3}_{4}.csv".format(raw_msg['tenant_id'],
                                 raw_msg['host_name'], raw_msg['host_id'],
                                 raw_msg['log_id'], encoded_ts)
 
+                _filename = filename[0:-4]
+                _mod_filename = ''.join([c for c in _filename if (c.isalnum() or c == "_")])
+                mod_filename = _mod_filename + ".csv"
+                filename = mod_filename
+
+            except Exception, e:
+                print self._error_msg_format("Error retrieving filename, reason: %s" % e)
+                continue
+
             file_path = data_directory + encoded_ts + "/" + filename
+
 
             # Checks if the directory exists, if not then create it..
             if not os.path.exists(data_directory + encoded_ts):
@@ -144,6 +160,7 @@ class ExtractSolr(object):
     def _modify_log_msg(self, log_msg):
         _log_msg = log_msg.replace("\"", "\"\"")
         _log_msg = _log_msg.replace("\n", "")
+        _log_msg = _log_msg.replace("\r", "")
         return _log_msg
 
     def _error_msg_format(self, msg):
