@@ -3,7 +3,7 @@ import datetime
 import urllib, urllib2
 import time
 
-import simplejson as json
+import json
 
 
 class ExtractSolr(object):
@@ -28,7 +28,11 @@ class ExtractSolr(object):
         self.parse_json(json_file)
    
     def rest_api_setup(self):
-        url = "http://{0}:{1}/solr/select/"
+
+        begin_dt = self._isoformat_timestamp(self.parsed_arguments.begin)
+        end_dt = self._isoformat_timestamp(self.parsed_arguments.end)
+
+        url = "http://{0}:{1}/solr/select/".format(self.config.SOLR_SERVER_HOST, self.config.SOLR_SERVER_PORT)
         data = {}
         data['wt'] = "json"
         data['rows'] = 10
@@ -36,18 +40,20 @@ class ExtractSolr(object):
         data['start'] = 0
         data['version'] = '2.2'
         data['indent'] = 'on'
-        data['q'] = 'time:[{0} TO {1}]'
+        data['q'] = 'time:[{0} TO {1}]'.format(begin_dt, end_dt)
 
         _data = urllib.urlencode(data)
 
         _url = url + "?" + _data
+        print _url
 
-        req = urllib2.Request(url=url, data=data)
+        req = urllib2.Request(url=_url)
         return req
 
     def retrieve_json(self, req):
         try:
             res = urllib2.urlopen(req)
+            return json.loads(res.read())
         except urllib2.HTTPError, e:
             print self._error_msg_format("URLError occurred, reason: %s" % e.read()) 
             return None 
@@ -60,7 +66,9 @@ class ExtractSolr(object):
 
     def parse_json(self, json_file):
         raw_msgs = json_file['response']['docs']
+        print "ASDF"
         for raw_msg in raw_msgs:
+            print raw_msg
             encoded_ts = self._encoded_timestamp(raw_msg['time'])
             filename = "{0}_{1}_{2}_{3}_{4}.csv".format(raw_msg['tenant_id'],
                                 raw_msg['host_name'], raw_msg['host_id'],
@@ -71,6 +79,15 @@ class ExtractSolr(object):
     def _encoded_timestamp(self, timestamp):
         
         return None 
+
+    def _isoformat_timestamp(self, timestamp):
+        dt = datetime.datetime.fromtimestamp(timestamp)
+        dt_str = dt.isoformat()
+        print dt_str
+        if '.' in dt_str:
+            dt_str = dt_str[0:dt_str.index('.')]
+        dt_str += "Z"
+        return dt_str
 
     def _error_msg_format(self, msg):
         return " " * 5, "*" * 5, msg
