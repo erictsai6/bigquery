@@ -5,9 +5,11 @@ import time
 import os
 import dateutil.parser
 import re
+import sys
 
 import json
 
+REQUEST_LIMIT = 250000
 
 class ExtractSolr(object):
     def __init__(self, config, parsed_arguments):
@@ -16,31 +18,46 @@ class ExtractSolr(object):
         self.log_id_set = set() 
 
     def execute(self):
-        req = self.rest_api_setup()
-       
-        start_time = int(time.time())
-        json_file = self.retrieve_json(req)
-        end_time = int(time.time())
+        # total_req
+        total_req_num = 1000000 
+        
+        f_metrics = open("metrics.txt", "w")
 
-        time_processed = end_time - start_time
-        print " --- time processed approximately", str(time_processed), "s"
+        for request_start in range(0, total_req_num, REQUEST_LIMIT):
+            delta_start = total_req_num - request_start
+            if delta_start > REQUEST_LIMIT:
+                delta_start = REQUEST_LIMIT 
+            req = self.rest_api_setup(request_start, delta_start)
 
-        if not json_file:
-            raise Exception("No json file found")
-       
-        self.parse_json(json_file)
+            start_time = int(time.time())
+            json_file = self.retrieve_json(req)
+            end_time = int(time.time())
+
+            time_processed = end_time - start_time
+            print " --- time processed approximately", str(time_processed), "s"
+
+            if not json_file:
+                raise Exception("No json file found")
+             
+            f_metrics.write("request_start-%s, file_size-%s bytes, time_processed-%s s\n" %
+                        (request_start, sys.getsizeof(json_file), time_processed))
+           
+            self.parse_json(json_file)
+        
+        f_metrics.close()
    
-    def rest_api_setup(self):
+    def rest_api_setup(self, start, num_request):
 
         begin_dt = self._isoformat_timestamp(self.parsed_arguments.begin)
         end_dt = self._isoformat_timestamp(self.parsed_arguments.end)
 
         url = "http://{0}:{1}/solr/select/".format(self.config.SOLR_SERVER_HOST, self.config.SOLR_SERVER_PORT)
+        
         data = {}
         data['wt'] = "json"
-        data['rows'] = 500000 
+        data['rows'] = num_request 
         data['fl'] = "*,score"
-        data['start'] = 0
+        data['start'] = start 
         data['version'] = '2.2'
         data['indent'] = 'on'
         data['q'] = 'time:[{0} TO {1}]'.format(begin_dt, end_dt)
@@ -89,7 +106,7 @@ class ExtractSolr(object):
             # Checks if the file exists
             if not os.path.isfile(file_path):
                 ff = open(file_path, "w")
-                ff.write('time, msg_num, severity, message, dyn_headers')
+                #ff.write('time, msg_num, severity, message, dyn_headers')
             else:
                 ff = open(file_path, "a+")
            
@@ -109,7 +126,7 @@ class ExtractSolr(object):
 
             ff.close()
             cnt += 1
-            if cnt % 100 == 0:
+            if cnt % 1000 == 0:
                 print "  ", cnt, "log_msg processed"
    
     def _encoded_timestamp(self, ts_dt):
@@ -130,4 +147,4 @@ class ExtractSolr(object):
         return _log_msg
 
     def _error_msg_format(self, msg):
-        return " " * 5, "*" * 5, msg
+        return "%s %s %s" % (" " * 5, "*" * 5, msg)
