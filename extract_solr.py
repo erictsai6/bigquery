@@ -2,6 +2,9 @@ import calendar
 import datetime
 import urllib, urllib2
 import time
+import os
+import dateutil.parser
+import re
 
 import json
 
@@ -10,7 +13,7 @@ class ExtractSolr(object):
     def __init__(self, config, parsed_arguments):
         self.config = config
         self.parsed_arguments = parsed_arguments
-        self.log_id_dict = {}
+        self.log_id_set = set() 
 
     def execute(self):
         req = self.rest_api_setup()
@@ -20,7 +23,7 @@ class ExtractSolr(object):
         end_time = int(time.time())
 
         time_processed = end_time - start_time
-        print " --- time processed approximately", str(time_processed), "ms"
+        print " --- time processed approximately", str(time_processed), "s"
 
         if not json_file:
             raise Exception("No json file found")
@@ -35,7 +38,7 @@ class ExtractSolr(object):
         url = "http://{0}:{1}/solr/select/".format(self.config.SOLR_SERVER_HOST, self.config.SOLR_SERVER_PORT)
         data = {}
         data['wt'] = "json"
-        data['rows'] = 10
+        data['rows'] = 500000 
         data['fl'] = "*,score"
         data['start'] = 0
         data['version'] = '2.2'
@@ -66,19 +69,51 @@ class ExtractSolr(object):
 
     def parse_json(self, json_file):
         raw_msgs = json_file['response']['docs']
-        print "ASDF"
+        
+        data_directory = "data_files/"
+        cnt = 0
         for raw_msg in raw_msgs:
-            print raw_msg
-            encoded_ts = self._encoded_timestamp(raw_msg['time'])
+            ts_dt = dateutil.parser.parse(raw_msg['time'])
+            ts = int(time.mktime(ts_dt.timetuple()))
+            encoded_ts = self._encoded_timestamp(ts_dt)
             filename = "{0}_{1}_{2}_{3}_{4}.csv".format(raw_msg['tenant_id'],
                                 raw_msg['host_name'], raw_msg['host_id'],
-                                raw_msg['log_id'], raw_msg['time'])
+                                raw_msg['log_id'], encoded_ts)
 
-            pass
+            file_path = data_directory + encoded_ts + "/" + filename
+
+            # Checks if the directory exists, if not then create it..
+            if not os.path.exists(data_directory + encoded_ts):
+                os.makedirs(data_directory + encoded_ts)
+           
+            # Checks if the file exists
+            if not os.path.isfile(file_path):
+                ff = open(file_path, "w")
+                ff.write('time, msg_num, severity, message, dyn_headers')
+            else:
+                ff = open(file_path, "a+")
+           
+            if filename not in self.log_id_set:
+                print filename, "successfully added"
+                self.log_id_set.add(filename)
+           
+            try:
+                row_line = "{0}, {1}, {2}, \"{3}\", \"{4}\"\n".format(
+                        ts, raw_msg['msg_num'], raw_msg['severity'], 
+                        self._modify_log_msg(raw_msg['message']), "")
+            except Exception, e:
+                print self._error_msg_format("exception parsing the log message, reason: %s" % e)
+                ff.close()
+                continue
+            ff.write(row_line)
+
+            ff.close()
+            cnt += 1
+            if cnt % 100 == 0:
+                print "  ", cnt, "log_msg processed"
    
-    def _encoded_timestamp(self, timestamp):
-        
-        return None 
+    def _encoded_timestamp(self, ts_dt):
+        return "%04d%02d%02d" % (ts_dt.year, ts_dt.month, ts_dt.day)
 
     def _isoformat_timestamp(self, timestamp):
         dt = datetime.datetime.fromtimestamp(timestamp)
@@ -88,6 +123,11 @@ class ExtractSolr(object):
             dt_str = dt_str[0:dt_str.index('.')]
         dt_str += "Z"
         return dt_str
+
+    def _modify_log_msg(self, log_msg):
+        _log_msg = log_msg.replace("\"", "\"\"")
+        _log_msg = _log_msg.replace("\n", "")
+        return _log_msg
 
     def _error_msg_format(self, msg):
         return " " * 5, "*" * 5, msg
