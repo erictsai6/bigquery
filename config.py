@@ -7,5 +7,6 @@
 
 """
 
-
+SOLR_SERVER_HOST = "127.0.0.1"
+SOLR_SERVER_PORT = 8983
 
